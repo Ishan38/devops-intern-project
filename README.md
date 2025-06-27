@@ -1,4 +1,7 @@
-![image](https://github.com/user-attachments/assets/5bd7c1a3-d54c-4a66-ae31-34ac02e205b2)InventoWare: Legacy Application Modernizaion with IaC
+![image](https://github.com/user-attachments/assets/5bd7c1a3-d54c-4a66-ae31-34ac02e205b2)
+
+InventoWare: Legacy Application Modernizaion with IaC
+
 Project definition:
 InventoWare is a DevOps-driven project designed to demonstrate the modernization of a legacy application using Infrastructure as Code (IaC) and cloud-native technologies. The project involves building a simple cloud-based “Hello World” application using Python, which is then containerized with Docker. It showcases how to automate infrastructure provisioning on AWS using Terraform, configure and manage application environments using Ansible, and implement a fully automated CI/CD pipeline with Jenkins. To ensure security, the project also integrates Trivy for scanning Docker images for vulnerabilities. This end-to-end solution illustrates how legacy applications can be transformed into scalable, secure, and easily deployable cloud-native systems using modern DevOps practices and tools.
 
