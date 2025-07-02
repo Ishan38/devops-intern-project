@@ -2,51 +2,46 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = 'myapp'
-        DOCKER_REGISTRY = 'docker.io/yourusername'
+        IMAGE_NAME = 'devops-intern-project'
+        DOCKER_REGISTRY = 'yourdockerhubusername/devops-intern-project'
     }
 
     stages {
         stage('Clone Code') {
             steps {
-                git 'https://github.com/yourname/your-repo.git'
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                sh 'pip install -r requirements.txt' // for Python
-                // or
-                // sh 'npm install' // for Node.js
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                sh 'pytest tests/' // or your test command
+                git 'https://github.com/maaaaanas/devops-intern-project.git'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $DOCKER_REGISTRY/$IMAGE_NAME:latest .'
+                script {
+                    dockerImage = docker.build("${IMAGE_NAME}")
+                }
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Security Scan (Trivy)') {
             steps {
-                withCredentials([string(credentialsId: 'dockerhub-pass', variable: 'DOCKER_PASSWORD')]) {
-                    sh '''
-                        echo $DOCKER_PASSWORD | docker login -u Tanishqua --abcd607-stdin
-                        docker push $DOCKER_REGISTRY/$IMAGE_NAME:latest
-                    '''
+                sh 'trivy image ${IMAGE_NAME} || true'
+            }
+        }
+
+        stage('Push to DockerHub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                    docker tag ${IMAGE_NAME} ${DOCKER_REGISTRY}
+                    docker push ${DOCKER_REGISTRY}
+                    """
                 }
             }
         }
 
         stage('Deploy') {
             steps {
-                sh 'docker run -d -p 5000:5000 $DOCKER_REGISTRY/$IMAGE_NAME:latest'
+                echo 'Deploy to AWS or local server (use Ansible or Kubernetes)'
             }
         }
     }
