@@ -1,0 +1,53 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = 'myapp'
+        DOCKER_REGISTRY = 'docker.io/yourusername'
+    }
+
+    stages {
+        stage('Clone Code') {
+            steps {
+                git 'https://github.com/yourname/your-repo.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'pip install -r requirements.txt' // for Python
+                // or
+                // sh 'npm install' // for Node.js
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh 'pytest tests/' // or your test command
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t $DOCKER_REGISTRY/$IMAGE_NAME:latest .'
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([string(credentialsId: 'dockerhub-pass', variable: 'DOCKER_PASSWORD')]) {
+                    sh '''
+                        echo $DOCKER_PASSWORD | docker login -u yourusername --password-stdin
+                        docker push $DOCKER_REGISTRY/$IMAGE_NAME:latest
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh 'docker run -d -p 5000:5000 $DOCKER_REGISTRY/$IMAGE_NAME:latest'
+            }
+        }
+    }
+}
