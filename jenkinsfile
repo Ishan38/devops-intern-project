@@ -1,0 +1,48 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = 'devops-intern-project'
+        DOCKER_REGISTRY = 'yourdockerhubusername/devops-intern-project'
+    }
+
+    stages {
+        stage('Clone Code') {
+            steps {
+                git 'https://github.com/maaaaanas/devops-intern-project.git'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    dockerImage = docker.build("${IMAGE_NAME}")
+                }
+            }
+        }
+
+        stage('Security Scan (Trivy)') {
+            steps {
+                sh 'trivy image ${IMAGE_NAME} || true'
+            }
+        }
+
+        stage('Push to DockerHub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                    docker tag ${IMAGE_NAME} ${DOCKER_REGISTRY}
+                    docker push ${DOCKER_REGISTRY}
+                    """
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                echo 'Deploy to AWS or local server (use Ansible or Kubernetes)'
+            }
+        }
+    }
+}
