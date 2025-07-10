@@ -1,136 +1,101 @@
 pipeline {
     agent any
 
-        environment {
+    environment {
         APP_NAME = 'hello-world-app' 
         AWS_REGION = 'eu-north-1'    
         ECR_REGISTRY = '857235179891.dkr.ecr.eu-north-1.amazonaws.com'
-        ECR_REPO = "${ECR_REGISTRY}/${APP_NAME}"
+        ECR_REPO = "${ECR_REGISTRY}/hello-world-app"
         AWS_CREDENTIALS_ID = 'aws-creden' 
     }
 
-    
     stages {
+
         stage('Clone Repository') {
             steps {
                 git url: 'https://github.com/maaaaanas/devops-intern-project.git', branch: 'main'
             }
         }
 
-                stage('Docker Build') {
+        stage('Docker Build') {
             steps {
-                script {
-                    sh "docker build -t ${APP_NAME}:latest ."
-                }
+                bat "docker build -t %APP_NAME%:latest ."
             }
         }
 
         stage('Docker Run Test') {
             steps {
-                script {
-                    sh """
-                        echo "Running Docker container for testing..."
-                        docker run -d -p 5000:5000 --name test-${APP_NAME} ${APP_NAME}:latest
-                        
-                        echo "Waiting 5 seconds for the application to start..."
-                        # Wait for a few seconds to allow the application inside the container to start up.
-                        sleep 5
-                        
-                        echo "Fetching container logs..."
-                        # Display the logs of the running container to check for startup errors.
-                        docker logs test-${APP_NAME}
-                    """
-                }
+                bat """
+                    echo Running Docker container for testing...
+                    docker run -d -p 5000:5000 --name test-%APP_NAME% %APP_NAME%:latest
+                    
+                    timeout /t 5
+                    
+                    echo Fetching container logs...
+                    docker logs test-%APP_NAME%
+                """
             }
         }
 
-        // Stage 4: Perform a security scan on the Docker image using Trivy
         stage('Trivy Security Scan') {
             steps {
-                script {
-                    // Execute Trivy scan.
-                    // '--format table --output trivy-report.txt' saves the scan results to a file.
-                    // '|| true' ensures that the pipeline doesn't fail immediately if Trivy
-                    // exits with a non-zero status (e.g., due to vulnerabilities found),
-                    // allowing the report to be archived. You might remove '|| true'
-                    // if you want the pipeline to fail on any vulnerability.
-                    sh """
-                        echo "Running Trivy security scan on ${APP_NAME}:latest..."
-                        trivy image --format table --output trivy-report.txt ${APP_NAME}:latest || true
-                    """
-                }
-                // Archive the Trivy report as a build artifact, even if the stage fails.
+                bat """
+                    echo Running Trivy security scan on %APP_NAME%...
+                    trivy image --format table --output trivy-report.txt %APP_NAME%:latest || exit /b 0
+                """
                 archiveArtifacts artifacts: 'trivy-report.txt', onlyIfSuccessful: false
             }
         }
 
-        // Stage 5: Authenticate with ECR and push the Docker image
         stage('Push to ECR') {
             steps {
-                // Use Jenkins' 'withCredentials' binding to securely access AWS credentials.
-                withCredentials([
-                    [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]
-                ]) {
-                    script {
-                        // Execute multiple AWS and Docker commands.
-                        sh """
-                            echo "Logging in to ECR registry ${ECR_REGISTRY}..."
-                            # Retrieve ECR login password and pipe it to docker login.
-                            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                            
-                            echo "Tagging Docker image for ECR..."
-                            # Tag the locally built image with the full ECR repository URI.
-                            docker tag ${APP_NAME}:latest ${ECR_REPO}:latest
-                            
-                            echo "Pushing Docker image to ECR..."
-                            # Push the tagged image to ECR.
-                            docker push ${ECR_REPO}:latest
-                        """
-                    }
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: "${AWS_CREDENTIALS_ID}"
+                ]]) {
+                    bat """
+                        echo Logging in to ECR...
+                        aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %ECR_REGISTRY%
+                        
+                        echo Tagging image...
+                        docker tag %APP_NAME%:latest %ECR_REPO%:latest
+                        
+                        echo Pushing to ECR...
+                        docker push %ECR_REPO%:latest
+                    """
                 }
             }
         }
 
-        // Stage 6: Provision infrastructure using Terraform
         stage('Provision Infrastructure (Terraform)') {
             steps {
-                // Access AWS credentials for Terraform operations.
-                withCredentials([
-                    [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]
-                ]) {
-                    script {
-                        // Navigate into the 'terraform' directory within the cloned repository.
-                        // This assumes your Terraform files (.tf) are in a sub-directory named 'terraform'.
-                        sh """
-                            echo "Initializing Terraform..."
-                            cd terraform
-                            terraform init
-                            
-                            echo "Applying Terraform configuration..."
-                            # Apply the Terraform configuration automatically without prompt.
-                            terraform apply -auto-approve
-                        """
-                    }
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: "${AWS_CREDENTIALS_ID}"
+                ]]) {
+                    bat """
+                        cd terraform
+                        terraform init
+                        terraform apply -auto-approve
+                    """
                 }
             }
         }
     }
 
-    // Post-build actions, executed regardless of stage success/failure
     post {
-        // Always execute cleanup steps
         always {
-            echo 'Cleaning up Docker containers...'
-            sh "docker stop test-${APP_NAME} || true"
-            sh "docker rm test-${APP_NAME} || true"
+            echo 'Cleaning up Docker container...'
+            bat "docker stop test-%APP_NAME% || exit /b 0"
+            bat "docker rm test-%APP_NAME% || exit /b 0"
         }
-        
+
         success {
-            echo 'Pipeline completed successfully.'
+            echo ' Pipeline completed successfully.'
         }
-        
+
         failure {
-            echo 'Pipeline failed.'
+            echo ' Pipeline failed.'
         }
     }
 }
