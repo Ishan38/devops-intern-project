@@ -2,16 +2,15 @@ pipeline {
     agent any
 
     environment {
-        APP_NAME = 'hello-world-app' 
-        AWS_REGION = 'eu-north-1'    
+        APP_NAME = 'hello-world-app'
+        AWS_REGION = 'eu-north-1'
         ECR_REGISTRY = '857235179891.dkr.ecr.eu-north-1.amazonaws.com'
         ECR_REPO = "${ECR_REGISTRY}/hello-world-app"
-        AWS_CREDENTIALS_ID = 'aws-creden' 
+        AWS_CREDENTIALS_ID = 'aws-creden'
     }
 
     stages {
-
-        stage('Clone Repository') {
+        stage('Clone Repo') {
             steps {
                 git url: 'https://github.com/maaaaanas/devops-intern-project.git', branch: 'main'
             }
@@ -26,12 +25,9 @@ pipeline {
         stage('Docker Run Test') {
             steps {
                 bat """
-                    echo Running Docker container for testing...
+                    echo Running Docker container...
                     docker run -d -p 5000:5000 --name test-%APP_NAME% %APP_NAME%:latest
-                    
                     timeout /t 5
-                    
-                    echo Fetching container logs...
                     docker logs test-%APP_NAME%
                 """
             }
@@ -40,7 +36,6 @@ pipeline {
         stage('Trivy Security Scan') {
             steps {
                 bat """
-                    echo Running Trivy security scan on %APP_NAME%...
                     trivy image --format table --output trivy-report.txt %APP_NAME%:latest || exit /b 0
                 """
                 archiveArtifacts artifacts: 'trivy-report.txt', onlyIfSuccessful: false
@@ -54,20 +49,15 @@ pipeline {
                     credentialsId: "${AWS_CREDENTIALS_ID}"
                 ]]) {
                     bat """
-                        echo Logging in to ECR...
                         aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %ECR_REGISTRY%
-                        
-                        echo Tagging image...
                         docker tag %APP_NAME%:latest %ECR_REPO%:latest
-                        
-                        echo Pushing to ECR...
                         docker push %ECR_REPO%:latest
                     """
                 }
             }
         }
 
-        stage('Provision Infrastructure (Terraform)') {
+        stage('Terraform Apply') {
             steps {
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
@@ -85,15 +75,12 @@ pipeline {
 
     post {
         always {
-            echo 'Cleaning up Docker container...'
             bat "docker stop test-%APP_NAME% || exit /b 0"
             bat "docker rm test-%APP_NAME% || exit /b 0"
         }
-
         success {
-            echo ' Pipeline completed successfully.'
+            echo 'Pipeline completed successfully.'
         }
-
         failure {
             echo ' Pipeline failed.'
         }
