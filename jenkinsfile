@@ -10,7 +10,6 @@ pipeline {
     }
 
     stages {
-
         stage('Clone Repository') {
             steps {
                 git url: 'https://github.com/maaaaanas/devops-intern-project.git', branch: 'main'
@@ -20,8 +19,11 @@ pipeline {
         stage('Docker Build and Run') {
             steps {
                 script {
-                    bat "docker build -t %APP_NAME%:latest ."
-                    bat "docker run -d -p 5000:5000 --name test-%APP_NAME% %APP_NAME%:latest"
+                    bat """
+                    docker --version
+                    docker build -t %APP_NAME%:latest .
+                    docker run -d -p 5000:5000 --name test-%APP_NAME% %APP_NAME%:latest
+                    """
                 }
             }
         }
@@ -30,6 +32,7 @@ pipeline {
             steps {
                 script {
                     bat """
+                    trivy --version
                     trivy image --format table --output trivy-report.txt %APP_NAME%:latest || exit 0
                     """
                 }
@@ -44,6 +47,7 @@ pipeline {
                     credentialsId: "${AWS_CREDENTIALS_ID}"
                 ]]) {
                     bat """
+                    aws --version
                     aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %ECR_REGISTRY%
                     docker tag %APP_NAME%:latest %ECR_REPO%:latest
                     docker push %ECR_REPO%:latest
@@ -60,6 +64,7 @@ pipeline {
                 ]]) {
                     bat """
                     cd terraform
+                    terraform --version
                     terraform init
                     terraform apply -auto-approve
                     """
@@ -78,7 +83,7 @@ pipeline {
             echo ' Pipeline completed successfully.'
         }
         failure {
-            echo ' Pipeline failed.'
+            echo 'Pipeline failed.'
         }
     }
 }
