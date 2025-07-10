@@ -9,10 +9,6 @@ pipeline {
         AWS_CREDENTIALS_ID = 'aws-creden'
     }
 
-    tools {
-        dockerTool 'Docker_24'  // Optional: only if you've configured this tool in Jenkins
-    }
-
     stages {
 
         stage('Clone Repository') {
@@ -79,7 +75,7 @@ pipeline {
             sh "docker rm test-${APP_NAME} || true"
         }
         success {
-            echo 'Pipeline completed successfully.'
+            echo ' Pipeline completed successfully.'
         }
         failure {
             echo 'Pipeline failed.'
