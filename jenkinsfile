@@ -10,15 +10,14 @@ pipeline {
     }
 
     tools {
-        terraform 'Terraform_1.6'  // Make sure this name matches your Jenkins tools config
+        dockerTool 'Docker_24'  // Optional: only if you've configured this tool in Jenkins
     }
 
     stages {
 
         stage('Clone Repository') {
             steps {
-                git branch: 'main'
-                git url: 'https://github.com/maaaaanas/devops-intern-project.git'
+                git url: 'https://github.com/maaaaanas/devops-intern-project.git', branch: 'main'
             }
         }
 
@@ -44,7 +43,10 @@ pipeline {
 
         stage('Push to ECR (Optional)') {
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: "${AWS_CREDENTIALS_ID}"
+                ]]) {
                     sh """
                         aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
                         docker tag ${APP_NAME}:latest ${ECR_REPO}:latest
@@ -56,7 +58,10 @@ pipeline {
 
         stage('Provision Infrastructure with Terraform') {
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: "${AWS_CREDENTIALS_ID}"
+                ]]) {
                     sh """
                         cd terraform
                         terraform init
