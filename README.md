@@ -38,4 +38,3 @@ Data pipeline:
 • Trivy secures our Docker images. 
 • AWS ECS and Kubernetes manage deployments. 
 • Grafana, Prometheus, and Datadog handle monitoring
-.
