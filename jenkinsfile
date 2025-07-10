@@ -1,94 +1,155 @@
+// Define the Jenkins Pipeline
 pipeline {
+    // Agent definition: 'any' means Jenkins will pick any available agent.
+    // For production, you might specify a label (e.g., 'agent { label 'docker-host' }')
     agent any
 
+    // Define environment variables that will be used throughout the pipeline
     environment {
-        APP_NAME = 'hello-world-app'
-        AWS_REGION = 'eu-north-1'
+        APP_NAME = 'hello-world-app' // Name of your application
+        AWS_REGION = 'eu-north-1'    // AWS region for ECR and other services
+        // Construct the full ECR registry URL using the AWS account ID and region
         ECR_REGISTRY = '857235179891.dkr.ecr.eu-north-1.amazonaws.com'
-        ECR_REPO = "${ECR_REGISTRY}/hello-world-app"
-        AWS_CREDENTIALS_ID = 'aws-creden'
+        // Construct the full ECR repository URI for tagging and pushing images
+        ECR_REPO = "${ECR_REGISTRY}/${APP_NAME}"
+        AWS_CREDENTIALS_ID = 'aws-creden' // Jenkins credential ID for AWS access
     }
 
+    // Define the stages of the CI/CD pipeline
     stages {
+        // Stage 1: Clone the application repository from GitHub
         stage('Clone Repository') {
             steps {
+                // Use the Git SCM plugin to clone the repository
+                // The repository will be cloned into the Jenkins workspace for this job.
                 git url: 'https://github.com/maaaaanas/devops-intern-project.git', branch: 'main'
             }
         }
 
+        // Stage 2: Build the Docker image
         stage('Docker Build') {
             steps {
                 script {
+                    // Execute a Windows batch command (bat) to build the Docker image.
+                    // The '.' indicates that the build context (and Dockerfile) is the current directory
+                    // (which is the cloned repository root in the Jenkins workspace).
                     bat "docker build -t %APP_NAME%:latest ."
                 }
             }
         }
 
+        // Stage 3: Run a quick test of the Docker image
         stage('Docker Run Test') {
             steps {
                 script {
+                    // Execute multiple Windows batch commands for testing.
+                    // Using triple quotes (bat """...""") allows for multi-line commands.
                     bat """
+                        echo "Running Docker container for testing..."
+                        # Run the container in detached mode (-d), map port 5000, and name it for easy cleanup.
                         docker run -d -p 5000:5000 --name test-%APP_NAME% %APP_NAME%:latest
+                        
+                        echo "Waiting 5 seconds for the application to start..."
+                        # Wait for a few seconds to allow the application inside the container to start up.
                         timeout /t 5
+                        
+                        echo "Fetching container logs..."
+                        # Display the logs of the running container to check for startup errors.
                         docker logs test-%APP_NAME%
                     """
                 }
             }
         }
 
+        // Stage 4: Perform a security scan on the Docker image using Trivy
         stage('Trivy Security Scan') {
             steps {
                 script {
+                    // Execute Trivy scan.
+                    // '--format table --output trivy-report.txt' saves the scan results to a file.
+                    // '|| exit 0' ensures that the pipeline doesn't fail immediately if Trivy
+                    // exits with a non-zero status (e.g., due to vulnerabilities found),
+                    // allowing the report to be archived. You might remove '|| exit 0'
+                    // if you want the pipeline to fail on any vulnerability.
                     bat """
+                        echo "Running Trivy security scan on %APP_NAME%:latest..."
                         trivy image --format table --output trivy-report.txt %APP_NAME%:latest || exit 0
                     """
                 }
+                // Archive the Trivy report as a build artifact, even if the stage fails.
                 archiveArtifacts artifacts: 'trivy-report.txt', onlyIfSuccessful: false
             }
         }
 
+        // Stage 5: Authenticate with ECR and push the Docker image
         stage('Push to ECR') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: "${AWS_CREDENTIALS_ID}"
-                ]]) {
-                    bat """
-                        aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %ECR_REGISTRY%
-                        docker tag %APP_NAME%:latest %ECR_REPO%:latest
-                        docker push %ECR_REPO%:latest
-                    """
+                // Use Jenkins' 'withCredentials' binding to securely access AWS credentials.
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]
+                ]) {
+                    script {
+                        // Execute multiple AWS and Docker commands.
+                        bat """
+                            echo "Logging in to ECR registry %ECR_REGISTRY%..."
+                            # Retrieve ECR login password and pipe it to docker login.
+                            aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %ECR_REGISTRY%
+                            
+                            echo "Tagging Docker image for ECR..."
+                            # Tag the locally built image with the full ECR repository URI.
+                            docker tag %APP_NAME%:latest %ECR_REPO%:latest
+                            
+                            echo "Pushing Docker image to ECR..."
+                            # Push the tagged image to ECR.
+                            docker push %ECR_REPO%:latest
+                        """
+                    }
                 }
             }
         }
 
+        // Stage 6: Provision infrastructure using Terraform
         stage('Provision Infrastructure (Terraform)') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: "${AWS_CREDENTIALS_ID}"
-                ]]) {
-                    bat """
-                        cd terraform
-                        terraform init
-                        terraform apply -auto-approve
-                    """
+                // Access AWS credentials for Terraform operations.
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]
+                ]) {
+                    script {
+                        // Navigate into the 'terraform' directory within the cloned repository.
+                        // This assumes your Terraform files (.tf) are in a sub-directory named 'terraform'.
+                        bat """
+                            echo "Initializing Terraform..."
+                            cd terraform
+                            terraform init
+                            
+                            echo "Applying Terraform configuration..."
+                            # Apply the Terraform configuration automatically without prompt.
+                            terraform apply -auto-approve
+                        """
+                    }
                 }
             }
         }
     }
 
+    // Post-build actions, executed regardless of stage success/failure
     post {
+        // Always execute cleanup steps
         always {
-            echo 'Cleaning up...'
+            echo 'Cleaning up Docker containers...'
+            // Stop and remove the test container. '|| exit 0' prevents pipeline failure
+            // if the container isn't running (e.g., if a previous step failed).
             bat "docker stop test-%APP_NAME% || exit 0"
             bat "docker rm test-%APP_NAME% || exit 0"
         }
+        // Actions to take if the pipeline succeeds
         success {
-            echo ' Pipeline completed successfully.'
+            echo 'Pipeline completed successfully.'
         }
+        // Actions to take if the pipeline fails
         failure {
-            echo ' Pipeline failed.'
+            echo 'Pipeline failed.'
         }
     }
 }
