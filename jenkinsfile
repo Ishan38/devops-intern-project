@@ -5,7 +5,7 @@ pipeline {
         APP_NAME = 'hello-world-app'
         AWS_REGION = 'eu-north-1'
         ECR_REGISTRY = '857235179891.dkr.ecr.eu-north-1.amazonaws.com'
-        ECR_REPO = '857235179891.dkr.ecr.eu-north-1.amazonaws.com/hello-world-app'
+        ECR_REPO = "${ECR_REGISTRY}/hello-world-app"
         AWS_CREDENTIALS_ID = 'aws-creden'
     }
 
@@ -16,13 +16,21 @@ pipeline {
             }
         }
 
-        stage('Docker Build and Run') {
+        stage('Docker Build') {
+            steps {
+                script {
+                    bat "docker build -t %APP_NAME%:latest ."
+                }
+            }
+        }
+
+        stage('Docker Run Test') {
             steps {
                 script {
                     bat """
-                    docker --version
-                    docker build -t %APP_NAME%:latest .
-                    docker run -d -p 5000:5000 --name test-%APP_NAME% %APP_NAME%:latest
+                        docker run -d -p 5000:5000 --name test-%APP_NAME% %APP_NAME%:latest
+                        timeout /t 5
+                        docker logs test-%APP_NAME%
                     """
                 }
             }
@@ -32,41 +40,38 @@ pipeline {
             steps {
                 script {
                     bat """
-                    trivy --version
-                    trivy image --format table --output trivy-report.txt %APP_NAME%:latest || exit 0
+                        trivy image --format table --output trivy-report.txt %APP_NAME%:latest || exit 0
                     """
                 }
                 archiveArtifacts artifacts: 'trivy-report.txt', onlyIfSuccessful: false
             }
         }
 
-        stage('Push to ECR (Optional)') {
+        stage('Push to ECR') {
             steps {
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: "${AWS_CREDENTIALS_ID}"
                 ]]) {
                     bat """
-                    aws --version
-                    aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %ECR_REGISTRY%
-                    docker tag %APP_NAME%:latest %ECR_REPO%:latest
-                    docker push %ECR_REPO%:latest
+                        aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %ECR_REGISTRY%
+                        docker tag %APP_NAME%:latest %ECR_REPO%:latest
+                        docker push %ECR_REPO%:latest
                     """
                 }
             }
         }
 
-        stage('Provision Infrastructure with Terraform') {
+        stage('Provision Infrastructure (Terraform)') {
             steps {
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
                     credentialsId: "${AWS_CREDENTIALS_ID}"
                 ]]) {
                     bat """
-                    cd terraform
-                    terraform --version
-                    terraform init
-                    terraform apply -auto-approve
+                        cd terraform
+                        terraform init
+                        terraform apply -auto-approve
                     """
                 }
             }
@@ -75,7 +80,7 @@ pipeline {
 
     post {
         always {
-            echo 'Cleaning up Docker container...'
+            echo 'Cleaning up...'
             bat "docker stop test-%APP_NAME% || exit 0"
             bat "docker rm test-%APP_NAME% || exit 0"
         }
@@ -83,7 +88,7 @@ pipeline {
             echo ' Pipeline completed successfully.'
         }
         failure {
-            echo 'Pipeline failed.'
+            echo ' Pipeline failed.'
         }
     }
 }
