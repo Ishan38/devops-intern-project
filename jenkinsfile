@@ -1,0 +1,83 @@
+pipeline {
+    agent any
+
+    environment {
+        APP_NAME = 'hello-world-app'
+        AWS_REGION = 'eu-north-1'
+        ECR_REGISTRY = '857235179891.dkr.ecr.eu-north-1.amazonaws.com'
+        ECR_REPO = '857235179891.dkr.ecr.eu-north-1.amazonaws.com/hello-world-app'
+        AWS_CREDENTIALS_ID = 'aws-creds'
+    }
+
+    tools {
+        terraform 'Terraform_1.6'  // Make sure this name matches your Jenkins tools config
+        dockerTool 'Docker_24'     // Optional: if using custom Docker install
+    }
+
+    stages {
+
+        stage('Clone Repository') {
+            steps {
+                git url: 'https://github.com/maaaaanas/devops-intern-project.git'
+            }
+        }
+
+        stage('Docker Build and Run') {
+            steps {
+                script {
+                    sh "docker build -t ${APP_NAME}:latest ."
+                    sh "docker run -d -p 5000:5000 --name test-${APP_NAME} ${APP_NAME}:latest"
+                }
+            }
+        }
+
+        stage('Trivy Security Scan') {
+            steps {
+                script {
+                    sh """
+                        trivy image --format table --output trivy-report.txt ${APP_NAME}:latest || true
+                    """
+                }
+                archiveArtifacts artifacts: 'trivy-report.txt', onlyIfSuccessful: false
+            }
+        }
+
+        stage('Push to ECR (Optional)') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                    sh """
+                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                        docker tag ${APP_NAME}:latest ${ECR_REPO}:latest
+                        docker push ${ECR_REPO}:latest
+                    """
+                }
+            }
+        }
+
+        stage('Provision Infrastructure with Terraform') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                    sh """
+                        cd terraform
+                        terraform init
+                        terraform apply -auto-approve
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Cleaning up Docker container...'
+            sh "docker stop test-${APP_NAME} || true"
+            sh "docker rm test-${APP_NAME} || true"
+        }
+        success {
+            echo 'Pipeline completed successfully.'
+        }
+        failure {
+            echo 'Pipeline failed.'
+        }
+    }
+}
