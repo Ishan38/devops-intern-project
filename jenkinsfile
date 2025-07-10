@@ -6,12 +6,11 @@ pipeline {
         AWS_REGION = 'eu-north-1'
         ECR_REGISTRY = '857235179891.dkr.ecr.eu-north-1.amazonaws.com'
         ECR_REPO = '857235179891.dkr.ecr.eu-north-1.amazonaws.com/hello-world-app'
-        AWS_CREDENTIALS_ID = 'aws-creds'
+        AWS_CREDENTIALS_ID = 'aws-cred'
     }
 
     tools {
         terraform 'Terraform_1.6'  // Make sure this name matches your Jenkins tools config
-        dockerTool 'Docker_24'     // Optional: if using custom Docker install
     }
 
     stages {
