@@ -5,7 +5,7 @@ pipeline {
         APP_NAME = 'hello-world-app'
         AWS_REGION = 'eu-north-1'
         ECR_REGISTRY = '857235179891.dkr.ecr.eu-north-1.amazonaws.com'
-        ECR_REPO = '857235179891.dkr.ecr.eu-north-1.amazonaws.com/hello-world-app'
+        ECR_REPO = "${ECR_REGISTRY}/${APP_NAME}"
         AWS_CREDENTIALS_ID = 'aws-creden'
     }
 
@@ -18,55 +18,53 @@ pipeline {
 
         stage('Docker Build') {
             steps {
-                bat 'docker build -t hello-world-app:latest .'
+                bat "docker build -t ${APP_NAME}:latest ."
             }
         }
 
         stage('Docker Run Test') {
             steps {
-                bat '''
-                    docker run -d -p 5000:5000 --name test-hello-world-app hello-world-app:latest
+                bat """
+                    docker run -d -p 5000:5000 --name test-${APP_NAME} ${APP_NAME}:latest
                     timeout /t 5 /nobreak
-                    docker logs test-hello-world-app
-                '''
+                    docker logs test-${APP_NAME}
+                """
             }
         }
 
         stage('Trivy Security Scan') {
             steps {
-                bat '''
-                    trivy image --format table --output trivy-report.txt hello-world-app:latest || exit 0
-                '''
+                bat """
+                    trivy image --format table --output trivy-report.txt ${APP_NAME}:latest || exit 0
+                """
                 archiveArtifacts artifacts: 'trivy-report.txt', onlyIfSuccessful: false
             }
         }
 
         stage('Push to ECR') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creden'
-                ]]) {
-                    bat '''
-                        aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin 857235179891.dkr.ecr.eu-north-1.amazonaws.com
-                        docker tag hello-world-app:latest 857235179891.dkr.ecr.eu-north-1.amazonaws.com/hello-world-app:latest
-                        docker push 857235179891.dkr.ecr.eu-north-1.amazonaws.com/hello-world-app:latest
-                    '''
+                script {
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                        bat """
+                            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                            docker tag ${APP_NAME}:latest ${ECR_REPO}:latest
+                            docker push ${ECR_REPO}:latest
+                        """
+                    }
                 }
             }
         }
 
         stage('Provision Infrastructure (Terraform)') {
             steps {
-                withCredentials([[
-                    $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'aws-creden'
-                ]]) {
-                    bat '''
-                        cd terraform
-                        terraform init
-                        terraform apply -auto-approve
-                    '''
+                script {
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                        bat """
+                            cd terraform
+                            terraform init
+                            terraform apply -auto-approve
+                        """
+                    }
                 }
             }
         }
@@ -75,14 +73,15 @@ pipeline {
     post {
         always {
             echo 'Cleaning up test container...'
-            bat 'docker stop test-hello-world-app || exit 0'
-            bat 'docker rm test-hello-world-app || exit 0'
+            bat "docker stop test-${APP_NAME} || exit 0"
+            bat "docker rm test-${APP_NAME} || exit 0"
         }
         success {
-            echo 'Pipeline completed successfully.'
+            echo ' Pipeline completed successfully.'
         }
         failure {
             echo 'Pipeline failed.'
-        }
-    }
+        }
+    }
 }
+          
