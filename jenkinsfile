@@ -18,16 +18,17 @@ pipeline {
 
         stage('Docker Build') {
             steps {
-                bat "docker build -t ${APP_NAME}:latest ."
+                bat 'docker --version'
+                bat "docker build -t %APP_NAME%:latest ."
             }
         }
 
         stage('Docker Run Test') {
             steps {
                 bat """
-                    docker run -d -p 5000:5000 --name test-${APP_NAME} ${APP_NAME}:latest
+                    docker run -d -p 5000:5000 --name test-%APP_NAME% %APP_NAME%:latest
                     timeout /t 5 /nobreak
-                    docker logs test-${APP_NAME}
+                    docker logs test-%APP_NAME%
                 """
             }
         }
@@ -35,7 +36,7 @@ pipeline {
         stage('Trivy Security Scan') {
             steps {
                 bat """
-                    trivy image --format table --output trivy-report.txt ${APP_NAME}:latest || exit 0
+                    trivy image --format table --output trivy-report.txt %APP_NAME%:latest || exit /b 0
                 """
                 archiveArtifacts artifacts: 'trivy-report.txt', onlyIfSuccessful: false
             }
@@ -46,9 +47,10 @@ pipeline {
                 script {
                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
                         bat """
-                            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                            docker tag ${APP_NAME}:latest ${ECR_REPO}:latest
-                            docker push ${ECR_REPO}:latest
+                            aws --version
+                            aws ecr get-login-password --region %AWS_REGION% | docker login --username AWS --password-stdin %ECR_REGISTRY%
+                            docker tag %APP_NAME%:latest %ECR_REPO%:latest
+                            docker push %ECR_REPO%:latest
                         """
                     }
                 }
@@ -61,6 +63,7 @@ pipeline {
                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
                         bat """
                             cd terraform
+                            terraform --version
                             terraform init
                             terraform apply -auto-approve
                         """
@@ -73,15 +76,14 @@ pipeline {
     post {
         always {
             echo 'Cleaning up test container...'
-            bat "docker stop test-${APP_NAME} || exit 0"
-            bat "docker rm test-${APP_NAME} || exit 0"
+            bat "docker stop test-%APP_NAME% || exit /b 0"
+            bat "docker rm test-%APP_NAME% || exit /b 0"
         }
         success {
             echo ' Pipeline completed successfully.'
         }
         failure {
             echo 'Pipeline failed.'
-        }
-    }
+        }
+    }
 }
-          
