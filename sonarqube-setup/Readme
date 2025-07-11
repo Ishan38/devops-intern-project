@@ -1,0 +1,30 @@
+# SonarQube Setup for InventoWare DevOps Project
+
+## ✅ Tools Used
+- SonarQube 10.4 (Local, running on port 9000)
+- SonarScanner 5.0
+- Java 17 (Adoptium)
+- Ubuntu via WSL2 (Windows)
+
+## ✅ Installation Steps
+
+### 1. Start SonarQube Server
+```bash
+cd ~/sonarqube/bin/linux-x86-64
+./sonar.sh start
+
+2. Clone Project
+
+git clone https://github.com/maaaaanas/devops-intern-project.git
+cd devops-intern-project
+
+
+3. Set Up sonar-project.properties
+
+
+4. Run Sonar Scanner
+
+sonar-scanner
+
+5. View Report
+Open http://localhost:9000
